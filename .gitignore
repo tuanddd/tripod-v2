@@ -1,0 +1,10 @@
+node_modules
+dist
+.DS_Store
+*.local
+.env
+.env.*
+*.tsbuildinfo
+idle-frame*.txt
+jumping-frame.txt
+landing-frame.txt
