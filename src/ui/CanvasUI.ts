@@ -3,6 +3,7 @@ import {
   FONT_BODY,
   FONT_DISPLAY,
   Theme,
+  W,
 } from "../constants/theme";
 
 /** Rounded panel background */
@@ -53,6 +54,7 @@ export function makeButton(
 ) {
   const {
     width = 160,
+    // Prefer ≥44px for touch targets when callers pass height
     height = 44,
     variant = "primary",
     fontSize = 14,
@@ -111,6 +113,30 @@ export function makeButton(
     .setInteractive({ useHandCursor: true });
   root.add(hit);
 
+  const pressIn = () => {
+    paint(true);
+    scene.tweens.killTweensOf(visual);
+    scene.tweens.add({
+      targets: visual,
+      scaleX: 0.96,
+      scaleY: 0.96,
+      duration: 60,
+      ease: "Sine.easeOut",
+    });
+  };
+  const pressOut = () => {
+    paint(false);
+    scene.tweens.killTweensOf(visual);
+    scene.tweens.add({
+      targets: visual,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 100,
+      ease: "Sine.easeOut",
+    });
+  };
+
+  // Hover for mouse; press feedback for touch
   hit.on("pointerover", () => {
     paint(true);
     scene.tweens.killTweensOf(visual);
@@ -122,31 +148,12 @@ export function makeButton(
       ease: "Sine.easeOut",
     });
   });
-  hit.on("pointerout", () => {
-    paint(false);
-    scene.tweens.killTweensOf(visual);
-    scene.tweens.add({
-      targets: visual,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 100,
-      ease: "Sine.easeOut",
-    });
-  });
+  hit.on("pointerout", pressOut);
   hit.on("pointerdown", () => {
-    scene.tweens.killTweensOf(visual);
-    scene.tweens.add({
-      targets: visual,
-      scaleX: 0.96,
-      scaleY: 0.96,
-      duration: 60,
-      yoyo: true,
-      onComplete: () => {
-        visual.setScale(1);
-      },
-    });
+    pressIn();
     onClick?.();
   });
+  hit.on("pointerup", pressOut);
 
   // Expose size for layout helpers
   root.setSize(width, height);
@@ -221,8 +228,9 @@ export function showToast(
     error: Theme.rose,
     success: Theme.cyan,
   };
-  const w = Math.min(420, Math.max(200, message.length * 9 + 40));
-  const container = scene.add.container(W_CENTER(scene), 40);
+  const maxW = Math.min(W - 32, 420);
+  const w = Math.min(maxW, Math.max(180, message.length * 8 + 36));
+  const container = scene.add.container(W / 2, 36);
   container.setDepth(1000);
 
   const g = scene.add.graphics();
@@ -234,40 +242,35 @@ export function showToast(
   const t = scene.add
     .text(0, 0, message, {
       fontFamily: FONT_BODY,
-      fontSize: "16px",
+      fontSize: "15px",
       color: "#eef2ff",
       fontStyle: "600",
+      wordWrap: { width: w - 20 },
+      align: "center",
     })
     .setOrigin(0.5);
 
   container.add([g, t]);
   container.setAlpha(0);
-  container.y = 28;
+  container.y = 24;
 
   scene.tweens.add({
     targets: container,
     alpha: 1,
-    y: 40,
+    y: 36,
     duration: 220,
     ease: "Back.easeOut",
     onComplete: () => {
       scene.tweens.add({
         targets: container,
         alpha: 0,
-        y: 28,
+        y: 24,
         delay: 2200,
         duration: 250,
         onComplete: () => container.destroy(),
       });
     },
   });
-}
-
-function W_CENTER(scene: Phaser.Scene) {
-  // Prefer design width if known via scale; fall back to camera mid
-  return scene.scale.gameSize?.width
-    ? scene.scale.gameSize.width / 2
-    : scene.cameras.main.centerX;
 }
 
 /** Draw a starfield into a graphics object */

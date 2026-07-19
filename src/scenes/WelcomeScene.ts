@@ -3,6 +3,7 @@ import {
   FONT_BODY,
   FONT_DISPLAY,
   H,
+  IS_MOBILE,
   Theme,
   W,
 } from "../constants/theme";
@@ -18,37 +19,34 @@ export class WelcomeScene extends Phaser.Scene {
   create() {
     audio.attach(this);
 
-    // Background layers
     const stars = this.add.graphics();
-    drawStarfield(stars, W, H, 100);
+    drawStarfield(stars, W, H, IS_MOBILE ? 60 : 100);
 
     if (this.textures.exists("welcome-bg")) {
-      const bg = this.add
+      this.add
         .image(W / 2, H / 2, "welcome-bg")
         .setDisplaySize(W, H)
         .setAlpha(0.45);
-      // Darken
       this.add.rectangle(W / 2, H / 2, W, H, Theme.void, 0.45);
-      void bg;
     }
 
-    // Soft vignette
     const vig = this.add.graphics();
     vig.fillStyle(Theme.void, 0.55);
     vig.fillRect(0, 0, W, H * 0.18);
     vig.fillRect(0, H * 0.82, W, H * 0.18);
 
-    // Logo
+    const logoScale = IS_MOBILE ? 0.38 : 0.55;
+    const logoTarget = IS_MOBILE ? 0.42 : 0.62;
     const logo = this.add
-      .image(W / 2, H * 0.32, "logo")
+      .image(W / 2, H * (IS_MOBILE ? 0.28 : 0.32), "logo")
       .setOrigin(0.5)
-      .setScale(0.55)
+      .setScale(logoScale)
       .setAlpha(0);
 
     this.tweens.add({
       targets: logo,
       alpha: 1,
-      scale: 0.62,
+      scale: logoTarget,
       duration: 700,
       ease: "Back.easeOut",
     });
@@ -62,13 +60,12 @@ export class WelcomeScene extends Phaser.Scene {
       delay: 700,
     });
 
-    // Tagline
     const tag = this.add
-      .text(W / 2, H * 0.48, "BUILD  ·  MERGE  ·  ASCEND", {
+      .text(W / 2, H * (IS_MOBILE ? 0.42 : 0.48), "BUILD  ·  MERGE  ·  ASCEND", {
         fontFamily: FONT_DISPLAY,
-        fontSize: "14px",
+        fontSize: IS_MOBILE ? "11px" : "14px",
         color: "#2ee6a6",
-        letterSpacing: 6,
+        letterSpacing: IS_MOBILE ? 3 : 6,
       })
       .setOrigin(0.5)
       .setAlpha(0);
@@ -80,18 +77,20 @@ export class WelcomeScene extends Phaser.Scene {
       duration: 500,
     });
 
-    // Blurb
     const blurb = this.add
       .text(
         W / 2,
-        H * 0.56,
-        "Match three to evolve your pods into a Galaxy Fortress.\nOutsmart droids. Spend credits. Dominate Podtown.",
+        H * (IS_MOBILE ? 0.5 : 0.56),
+        IS_MOBILE
+          ? "Match three to evolve your pods.\nOutsmart droids. Dominate Podtown."
+          : "Match three to evolve your pods into a Galaxy Fortress.\nOutsmart droids. Spend credits. Dominate Podtown.",
         {
           fontFamily: FONT_BODY,
-          fontSize: "18px",
+          fontSize: IS_MOBILE ? "16px" : "18px",
           color: "#a8b0d0",
           align: "center",
           lineSpacing: 6,
+          wordWrap: { width: W - 48 },
         }
       )
       .setOrigin(0.5)
@@ -104,11 +103,10 @@ export class WelcomeScene extends Phaser.Scene {
       duration: 500,
     });
 
-    // Engage button
-    const btn = makeButton(this, W / 2, H * 0.7, "ENGAGE", {
-      width: 200,
-      height: 52,
-      fontSize: 16,
+    const btn = makeButton(this, W / 2, H * (IS_MOBILE ? 0.66 : 0.7), "ENGAGE", {
+      width: IS_MOBILE ? 220 : 200,
+      height: IS_MOBILE ? 56 : 52,
+      fontSize: IS_MOBILE ? 18 : 16,
       variant: "primary",
       onClick: () => {
         audio.play("start");
@@ -131,20 +129,26 @@ export class WelcomeScene extends Phaser.Scene {
       ease: "Back.easeOut",
     });
 
-    // Version chip
     this.add
-      .text(W / 2, H * 0.8, "V2  ·  CANVAS ENGINE  ·  TRIPLE-POD CORE", {
-        fontFamily: FONT_DISPLAY,
-        fontSize: "10px",
-        color: "#6b7394",
-        letterSpacing: 3,
-      })
+      .text(
+        W / 2,
+        H * (IS_MOBILE ? 0.76 : 0.8),
+        IS_MOBILE
+          ? "V2  ·  TOUCH READY  ·  TRIPLE-POD"
+          : "V2  ·  CANVAS ENGINE  ·  TRIPLE-POD CORE",
+        {
+          fontFamily: FONT_DISPLAY,
+          fontSize: "10px",
+          color: "#6b7394",
+          letterSpacing: 2,
+        }
+      )
       .setOrigin(0.5)
       .setAlpha(0.8);
 
-    // Accent line under logo area
     const line = this.add.graphics();
     line.lineStyle(1, Theme.purple, 0.5);
-    line.lineBetween(W / 2 - 120, H * 0.515, W / 2 + 120, H * 0.515);
+    const ly = H * (IS_MOBILE ? 0.455 : 0.515);
+    line.lineBetween(W / 2 - 100, ly, W / 2 + 100, ly);
   }
 }

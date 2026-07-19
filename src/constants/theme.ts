@@ -23,10 +23,49 @@ export const Theme = {
 export const FONT_DISPLAY = "Orbitron, sans-serif";
 export const FONT_BODY = "Rajdhani, sans-serif";
 
-/** Design resolution — everything is laid out in this space, then FIT-scaled */
-export const W = 1280;
-export const H = 720;
-
 export const GRID = 6;
-export const BOARD_SIZE = 420;
-export const CELL = BOARD_SIZE / GRID;
+
+export type DesignMode = "desktop" | "mobile";
+
+/** Mutable design resolution — set once at boot via applyDesign() */
+export let W = 1280;
+export let H = 720;
+export let BOARD_SIZE = 420;
+export let CELL = BOARD_SIZE / GRID;
+export let IS_MOBILE = false;
+
+/**
+ * Pick layout from viewport.
+ * Portrait phones / narrow screens → mobile design (390×844).
+ * Everything else → desktop 1280×720.
+ */
+export function detectDesignMode(): DesignMode {
+  if (typeof window === "undefined") return "desktop";
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const minSide = Math.min(vw, vh);
+  const maxSide = Math.max(vw, vh);
+  const coarse =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  // Phone / small tablet portrait, or any coarse-pointer narrow device
+  if (minSide <= 700) return "mobile";
+  if (coarse && maxSide <= 1100 && vh >= vw) return "mobile";
+  return "desktop";
+}
+
+export function applyDesign(mode: DesignMode = detectDesignMode()) {
+  IS_MOBILE = mode === "mobile";
+  if (IS_MOBILE) {
+    // Tall phone canvas — FIT scales to any real device
+    W = 390;
+    H = 844;
+    BOARD_SIZE = 348;
+  } else {
+    W = 1280;
+    H = 720;
+    BOARD_SIZE = 420;
+  }
+  CELL = BOARD_SIZE / GRID;
+  return { W, H, BOARD_SIZE, CELL, IS_MOBILE, mode };
+}

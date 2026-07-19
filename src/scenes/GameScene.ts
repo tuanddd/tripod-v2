@@ -9,6 +9,7 @@ import {
   FONT_DISPLAY,
   GRID,
   H,
+  IS_MOBILE,
   Theme,
   W,
 } from "../constants/theme";
@@ -66,6 +67,8 @@ export class GameScene extends Phaser.Scene {
   private historyContainer!: Phaser.GameObjects.Container;
   private shopContainer!: Phaser.GameObjects.Container;
   private shopCoinLabels: Phaser.GameObjects.Text[] = [];
+  /** Mobile: history lives in a sheet, not a permanent side panel */
+  private historySheetRoot: Phaser.GameObjects.Container | null = null;
 
   // Modals
   private modalRoot: Phaser.GameObjects.Container | null = null;
@@ -75,7 +78,9 @@ export class GameScene extends Phaser.Scene {
   private lastPoints = 0;
   private hovered: { x: number; y: number } | null = null;
   private busyLock = false;
-  private readonly pieceDisplay = CELL * 0.82;
+  private get pieceDisplay() {
+    return CELL * 0.82;
+  }
 
   constructor() {
     super("Game");
@@ -93,8 +98,12 @@ export class GameScene extends Phaser.Scene {
     this.buildTopBar();
     this.buildHud();
     this.buildBoard();
-    this.buildHistoryPanel();
-    this.buildShopPanel();
+    if (IS_MOBILE) {
+      this.buildMobileShop();
+    } else {
+      this.buildHistoryPanel();
+      this.buildShopPanel();
+    }
     this.buildFooterHint();
 
     this.syncBoard(true);
@@ -134,14 +143,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildTopBar() {
-    // Brand
+    const pad = IS_MOBILE ? 12 : 20;
     const mark = this.add.graphics().setDepth(10);
     mark.fillStyle(Theme.purple, 1);
-    mark.fillRoundedRect(20, 16, 36, 36, 8);
+    mark.fillRoundedRect(pad, IS_MOBILE ? 12 : 16, IS_MOBILE ? 28 : 36, IS_MOBILE ? 28 : 36, 8);
     this.add
-      .text(38, 34, "TP", {
+      .text(pad + (IS_MOBILE ? 14 : 18), IS_MOBILE ? 26 : 34, "TP", {
         fontFamily: FONT_DISPLAY,
-        fontSize: "12px",
+        fontSize: IS_MOBILE ? "10px" : "12px",
         color: "#0a0e1a",
         fontStyle: "800",
       })
@@ -149,60 +158,124 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10);
 
     this.add
-      .text(66, 24, "TRIPOD", {
+      .text(pad + (IS_MOBILE ? 36 : 46), IS_MOBILE ? 16 : 24, "TRIPOD", {
         fontFamily: FONT_DISPLAY,
-        fontSize: "16px",
+        fontSize: IS_MOBILE ? "13px" : "16px",
         color: "#eef2ff",
         fontStyle: "700",
       })
       .setDepth(10);
 
-    this.add
-      .text(66, 42, "PODTOWN SECTOR · LIVE OPS", {
-        fontFamily: FONT_DISPLAY,
-        fontSize: "9px",
-        color: "#6b7394",
-        letterSpacing: 1,
-      })
-      .setDepth(10);
+    if (!IS_MOBILE) {
+      this.add
+        .text(66, 42, "PODTOWN SECTOR · LIVE OPS", {
+          fontFamily: FONT_DISPLAY,
+          fontSize: "9px",
+          color: "#6b7394",
+          letterSpacing: 1,
+        })
+        .setDepth(10);
+    }
 
-    // Right actions
-    makeButton(this, W - 210, 34, "FIELD MANUAL", {
-      width: 140,
-      height: 34,
-      fontSize: 10,
-      variant: "ghost",
-      onClick: () => {
-        audio.play("click");
-        this.openGuides();
-      },
-    }).setDepth(10);
+    const btnY = IS_MOBILE ? 26 : 34;
+    const btnH = IS_MOBILE ? 36 : 34;
 
-    makeButton(this, W - 100, 34, audio.bgEnabled ? "♪ ON" : "♪ OFF", {
-      width: 56,
-      height: 34,
-      fontSize: 11,
-      variant: "ghost",
-      onClick: () => {
-        audio.toggleBg();
-        // rebuild label is awkward; toast instead
-        showToast(this, audio.bgEnabled ? "Ambience on" : "Ambience off", "info");
-      },
-    }).setDepth(10);
+    if (IS_MOBILE) {
+      // Compact icon row: log · manual · music · mute
+      makeButton(this, W - 148, btnY, "LOG", {
+        width: 48,
+        height: btnH,
+        fontSize: 10,
+        variant: "ghost",
+        onClick: () => {
+          audio.play("click");
+          this.openHistorySheet();
+        },
+      }).setDepth(10);
 
-    makeButton(this, W - 40, 34, audio.muted ? "⊘" : "◉", {
-      width: 40,
-      height: 34,
-      fontSize: 14,
-      variant: "ghost",
-      onClick: () => {
-        audio.toggleMute();
-        showToast(this, audio.muted ? "Muted" : "Unmuted", "info");
-      },
-    }).setDepth(10);
+      makeButton(this, W - 94, btnY, "?", {
+        width: 40,
+        height: btnH,
+        fontSize: 14,
+        variant: "ghost",
+        onClick: () => {
+          audio.play("click");
+          this.openGuides();
+        },
+      }).setDepth(10);
+
+      makeButton(this, W - 48, btnY, audio.muted ? "⊘" : "◉", {
+        width: 40,
+        height: btnH,
+        fontSize: 14,
+        variant: "ghost",
+        onClick: () => {
+          audio.toggleMute();
+          showToast(this, audio.muted ? "Muted" : "Unmuted", "info");
+        },
+      }).setDepth(10);
+
+      // Long-press music via double-tap on mute area is awkward — add tiny music toggle
+      makeButton(this, W - 198, btnY, "♪", {
+        width: 40,
+        height: btnH,
+        fontSize: 14,
+        variant: "ghost",
+        onClick: () => {
+          audio.toggleBg();
+          showToast(
+            this,
+            audio.bgEnabled ? "Ambience on" : "Ambience off",
+            "info"
+          );
+        },
+      }).setDepth(10);
+    } else {
+      makeButton(this, W - 210, btnY, "FIELD MANUAL", {
+        width: 140,
+        height: btnH,
+        fontSize: 10,
+        variant: "ghost",
+        onClick: () => {
+          audio.play("click");
+          this.openGuides();
+        },
+      }).setDepth(10);
+
+      makeButton(this, W - 100, btnY, audio.bgEnabled ? "♪ ON" : "♪ OFF", {
+        width: 56,
+        height: btnH,
+        fontSize: 11,
+        variant: "ghost",
+        onClick: () => {
+          audio.toggleBg();
+          showToast(
+            this,
+            audio.bgEnabled ? "Ambience on" : "Ambience off",
+            "info"
+          );
+        },
+      }).setDepth(10);
+
+      makeButton(this, W - 40, btnY, audio.muted ? "⊘" : "◉", {
+        width: 40,
+        height: btnH,
+        fontSize: 14,
+        variant: "ghost",
+        onClick: () => {
+          audio.toggleMute();
+          showToast(this, audio.muted ? "Muted" : "Unmuted", "info");
+        },
+      }).setDepth(10);
+    }
   }
 
   private buildHud() {
+    if (IS_MOBILE) {
+      this.buildMobileHud();
+      return;
+    }
+
     const y = 78;
     const chipH = 56;
     const gap = 12;
@@ -231,7 +304,6 @@ export class GameScene extends Phaser.Scene {
         .setDepth(10);
     }
 
-    // Score value
     this.scoreText = this.add
       .text(34, y + 28, "0", {
         fontFamily: FONT_DISPLAY,
@@ -241,7 +313,6 @@ export class GameScene extends Phaser.Scene {
       })
       .setDepth(10);
 
-    // Holding
     this.holdingName = this.add
       .text(20 + chipW + gap + 14, y + 30, "—", {
         fontFamily: FONT_DISPLAY,
@@ -254,7 +325,6 @@ export class GameScene extends Phaser.Scene {
       .setDisplaySize(36, 36)
       .setDepth(10);
 
-    // Next tier
     this.nextName = this.add
       .text(20 + 2 * (chipW + gap) + 14, y + 30, "—", {
         fontFamily: FONT_DISPLAY,
@@ -268,7 +338,6 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10)
       .setAlpha(0.9);
 
-    // Coins
     this.coinsText = this.add
       .text(20 + 3 * (chipW + gap) + 14, y + 28, "0", {
         fontFamily: FONT_DISPLAY,
@@ -283,16 +352,140 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10);
   }
 
+  /** Compact 2-row HUD for phones */
+  private buildMobileHud() {
+    const y = 52;
+    const gap = 6;
+    const pad = 12;
+    const rowH = 44;
+    const half = (W - pad * 2 - gap) / 2;
+
+    // Row 1: score | credits
+    const g1 = this.add.graphics().setDepth(10);
+    drawPanel(g1, pad, y, half, rowH, {
+      fill: Theme.deep,
+      fillAlpha: 0.92,
+      stroke: Theme.gold,
+      strokeAlpha: 0.4,
+      radius: 10,
+    });
+    drawPanel(g1, pad + half + gap, y, half, rowH, {
+      fill: Theme.deep,
+      fillAlpha: 0.92,
+      stroke: Theme.cyan,
+      strokeAlpha: 0.4,
+      radius: 10,
+    });
+
+    this.add
+      .text(pad + 10, y + 8, "SCORE", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "8px",
+        color: "#6b7394",
+        letterSpacing: 1,
+      })
+      .setDepth(10);
+    this.scoreText = this.add
+      .text(pad + 10, y + 22, "0", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "16px",
+        color: "#ffc857",
+        fontStyle: "700",
+      })
+      .setDepth(10);
+
+    this.add
+      .text(pad + half + gap + 10, y + 8, "CREDITS", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "8px",
+        color: "#6b7394",
+        letterSpacing: 1,
+      })
+      .setDepth(10);
+    this.coinsText = this.add
+      .text(pad + half + gap + 10, y + 22, "0", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "16px",
+        color: "#2ee6a6",
+        fontStyle: "700",
+      })
+      .setDepth(10);
+    this.add
+      .image(pad + half + gap + half - 18, y + rowH / 2, "coins")
+      .setDisplaySize(18, 18)
+      .setDepth(10);
+
+    // Row 2: holding | next
+    const y2 = y + rowH + gap;
+    const g2 = this.add.graphics().setDepth(10);
+    drawPanel(g2, pad, y2, half, rowH, {
+      fill: Theme.deep,
+      fillAlpha: 0.92,
+      stroke: Theme.purple,
+      strokeAlpha: 0.4,
+      radius: 10,
+    });
+    drawPanel(g2, pad + half + gap, y2, half, rowH, {
+      fill: Theme.deep,
+      fillAlpha: 0.92,
+      stroke: Theme.border,
+      strokeAlpha: 0.35,
+      radius: 10,
+    });
+
+    this.add
+      .text(pad + 10, y2 + 8, "HOLDING", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "8px",
+        color: "#6b7394",
+        letterSpacing: 1,
+      })
+      .setDepth(10);
+    this.holdingName = this.add
+      .text(pad + 10, y2 + 22, "—", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "11px",
+        color: "#eef2ff",
+      })
+      .setDepth(10);
+    this.holdingImg = this.add
+      .image(pad + half - 22, y2 + rowH / 2, "piece-grass")
+      .setDisplaySize(28, 28)
+      .setDepth(10);
+
+    this.add
+      .text(pad + half + gap + 10, y2 + 8, "NEXT", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "8px",
+        color: "#6b7394",
+        letterSpacing: 1,
+      })
+      .setDepth(10);
+    this.nextName = this.add
+      .text(pad + half + gap + 10, y2 + 22, "—", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "11px",
+        color: "#a8b0d0",
+      })
+      .setDepth(10);
+    this.nextImg = this.add
+      .image(pad + half + gap + half - 22, y2 + rowH / 2, "piece-bush")
+      .setDisplaySize(28, 28)
+      .setDepth(10)
+      .setAlpha(0.9);
+  }
+
   private buildBoard() {
-    // Center board in middle column
     const boardX = W / 2 - BOARD_SIZE / 2;
-    const boardY = 160;
+    // Mobile: sit under compact HUD; desktop: classic mid layout
+    const boardY = IS_MOBILE ? 168 : 160;
     this.boardOrigin = { x: boardX, y: boardY };
 
     // Deploy pill above board
-    const pillY = boardY - 28;
+    const pillW = IS_MOBILE ? Math.min(W - 24, 280) : 220;
+    const pillY = boardY - (IS_MOBILE ? 22 : 28);
     const pillG = this.add.graphics().setDepth(10);
-    drawPanel(pillG, W / 2 - 110, pillY - 16, 220, 32, {
+    drawPanel(pillG, W / 2 - pillW / 2, pillY - 16, pillW, 32, {
       fill: Theme.deep,
       fillAlpha: 0.92,
       stroke: Theme.border,
@@ -300,7 +493,7 @@ export class GameScene extends Phaser.Scene {
       radius: 16,
     });
     this.add
-      .text(W / 2 - 70, pillY, "DEPLOY", {
+      .text(W / 2 - pillW / 2 + 16, pillY, "DEPLOY", {
         fontFamily: FONT_DISPLAY,
         fontSize: "9px",
         color: "#a8b0d0",
@@ -309,13 +502,13 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0, 0.5)
       .setDepth(10);
     this.deployImg = this.add
-      .image(W / 2 + 20, pillY, "piece-grass")
+      .image(W / 2 + (IS_MOBILE ? 10 : 20), pillY, "piece-grass")
       .setDisplaySize(26, 26)
       .setDepth(10);
     this.deployName = this.add
-      .text(W / 2 + 40, pillY, "—", {
+      .text(W / 2 + (IS_MOBILE ? 28 : 40), pillY, "—", {
         fontFamily: FONT_DISPLAY,
-        fontSize: "11px",
+        fontSize: IS_MOBILE ? "10px" : "11px",
         color: "#eef2ff",
       })
       .setOrigin(0, 0.5)
@@ -371,32 +564,40 @@ export class GameScene extends Phaser.Scene {
           .setDepth(20)
           .setInteractive({ useHandCursor: true });
 
-        zone.on("pointerover", () => {
+        // pointerover works for mouse; on touch, show preview on down then place
+        const showPreview = () => {
           this.hovered = { x, y };
           this.updateHighlights();
-          if (this.previewImg && !(x === 0 && y === 0)) {
-            const g = GameState.game;
-            if (!g) return;
-            const empty = g.state.board[y][x].id === PieceEnum.EMPTY;
-            const cur = g.state.currentPiece.id;
-            const show =
-              empty &&
-              cur !== PieceEnum.TELEPORT_PORTAL &&
-              cur !== PieceEnum.AIRDROPPER;
-            this.previewImg.setVisible(show);
-            if (show) {
-              const key = mappings[cur]?.key;
-              if (key) {
-                this.previewImg.setTexture(key);
-                this.fitHudIcon(this.previewImg, key, CELL * 0.82, CELL * 0.95);
-                // Match board pieces: droid stands slightly above cell center
-                const oy =
-                  cur === PieceEnum.BEAR ? DROID_STAND_OFFSET_Y : 0;
-                this.previewImg.setPosition(cx, cy - oy);
-              }
+          if (!this.previewImg || (x === 0 && y === 0)) return;
+          const g = GameState.game;
+          if (!g) return;
+          const empty = g.state.board[y][x].id === PieceEnum.EMPTY;
+          const cur = g.state.currentPiece.id;
+          const show =
+            empty &&
+            cur !== PieceEnum.TELEPORT_PORTAL &&
+            cur !== PieceEnum.AIRDROPPER;
+          this.previewImg.setVisible(show);
+          if (show) {
+            const key =
+              cur === PieceEnum.BEAR
+                ? DROID_TEX.idle1
+                : mappings[cur]?.key;
+            if (key) {
+              this.previewImg.setTexture(key);
+              this.fitHudIcon(
+                this.previewImg,
+                key,
+                CELL * 0.82,
+                CELL * 0.95
+              );
+              const oy =
+                cur === PieceEnum.BEAR ? DROID_STAND_OFFSET_Y : 0;
+              this.previewImg.setPosition(cx, cy - oy);
             }
           }
-        });
+        };
+        zone.on("pointerover", showPreview);
         zone.on("pointerout", () => {
           if (this.hovered?.x === x && this.hovered?.y === y) {
             this.hovered = null;
@@ -404,7 +605,10 @@ export class GameScene extends Phaser.Scene {
           }
           this.previewImg?.setVisible(false);
         });
-        zone.on("pointerdown", () => this.onCellClick(x, y));
+        zone.on("pointerdown", () => {
+          showPreview();
+          this.onCellClick(x, y);
+        });
       }
     }
 
@@ -481,12 +685,125 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10);
 
     this.shopContainer = this.add.container(x + 8, y + 36).setDepth(10);
-    this.buildShopItems(w - 16);
+    this.buildShopItems(w - 16, false);
   }
 
-  private buildShopItems(width: number) {
+  /**
+   * Mobile arsenal: 3×2 icon grid under the board — tap to buy.
+   * Ops log is a sheet opened from the top bar (LOG).
+   */
+  private buildMobileShop() {
+    const pad = 12;
+    const boardBottom = this.boardOrigin.y + BOARD_SIZE;
+    const y = boardBottom + 14;
+    const w = W - pad * 2;
+    const h = H - y - 28;
+
+    const g = this.add.graphics().setDepth(10);
+    drawPanel(g, pad, y, w, h, { radius: 12 });
+
+    this.add
+      .text(pad + 12, y + 10, "// ARSENAL", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "10px",
+        color: "#a8b0d0",
+        letterSpacing: 2,
+      })
+      .setDepth(10);
+
+    this.shopContainer = this.add.container(pad + 8, y + 30).setDepth(10);
+    // History container still needed for sheet content
+    this.historyContainer = this.add.container(0, 0).setDepth(10);
+    this.historyContainer.setVisible(false);
+
+    this.buildShopItems(w - 16, true);
+  }
+
+  private buildShopItems(width: number, mobileGrid: boolean) {
     this.shopContainer.removeAll(true);
     this.shopCoinLabels = [];
+
+    if (mobileGrid) {
+      const cols = 3;
+      const gap = 6;
+      const cellW = (width - gap * (cols - 1)) / cols;
+      const cellH = 78;
+
+      shopItems.forEach((item, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * (cellW + gap);
+        const y = row * (cellH + gap);
+        const meta = mappings[item.id];
+
+        const card = this.add.container(x, y);
+        const bg = this.add.graphics();
+        const paint = (active: boolean, disabled: boolean) => {
+          bg.clear();
+          bg.fillStyle(
+            Theme.panelElevated,
+            disabled ? 0.25 : active ? 0.95 : 0.6
+          );
+          bg.fillRoundedRect(0, 0, cellW, cellH, 10);
+          if (active && !disabled) {
+            bg.lineStyle(1.5, Theme.border, 0.7);
+            bg.strokeRoundedRect(0, 0, cellW, cellH, 10);
+          }
+        };
+        paint(false, false);
+
+        const icon = this.add
+          .image(cellW / 2, 26, meta.key)
+          .setDisplaySize(34, 34);
+
+        const name = this.add
+          .text(cellW / 2, 50, item.name, {
+            fontFamily: FONT_DISPLAY,
+            fontSize: "9px",
+            color: "#eef2ff",
+            fontStyle: "600",
+            align: "center",
+            wordWrap: { width: cellW - 8 },
+          })
+          .setOrigin(0.5, 0);
+
+        const price = this.add
+          .text(cellW / 2, 66, formatPoints(item.price), {
+            fontFamily: FONT_DISPLAY,
+            fontSize: "10px",
+            color: "#2ee6a6",
+            fontStyle: "700",
+          })
+          .setOrigin(0.5, 0);
+        this.shopCoinLabels.push(price);
+
+        const hit = this.add
+          .zone(cellW / 2, cellH / 2, cellW, cellH)
+          .setOrigin(0.5)
+          .setInteractive({ useHandCursor: true });
+
+        card.add([bg, icon, name, price, hit]);
+
+        hit.on("pointerdown", () => {
+          paint(true, false);
+          audio.play("click");
+          this.openBuyConfirm(item.id);
+        });
+        hit.on("pointerup", () => {
+          const can =
+            !!GameState.game && GameState.game.state.coins >= item.price;
+          paint(false, !can);
+        });
+        hit.on("pointerout", () => {
+          const can =
+            !!GameState.game && GameState.game.state.coins >= item.price;
+          paint(false, !can);
+        });
+
+        this.shopContainer.add(card);
+      });
+      return;
+    }
 
     shopItems.forEach((item, i) => {
       const rowH = 58;
@@ -537,7 +854,6 @@ export class GameScene extends Phaser.Scene {
         .setDisplaySize(12, 12)
         .setOrigin(0, 0.5);
 
-      // Fixed hit zone (top-left origin, matches row local coords)
       const hit = this.add
         .zone(width / 2, rowH / 2, width, rowH)
         .setOrigin(0.5)
@@ -565,6 +881,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildFooterHint() {
+    if (IS_MOBILE) {
+      this.add
+        .text(W / 2, H - 12, "Tap tile to place  ·  Corner disk swaps", {
+          fontFamily: FONT_BODY,
+          fontSize: "11px",
+          color: "#6b7394",
+        })
+        .setOrigin(0.5)
+        .setDepth(10);
+      return;
+    }
     this.add
       .text(
         W / 2,
@@ -578,6 +905,76 @@ export class GameScene extends Phaser.Scene {
       )
       .setOrigin(0.5)
       .setDepth(10);
+  }
+
+  /** Full-screen ops log sheet (mobile) */
+  private openHistorySheet() {
+    if (this.historySheetRoot) {
+      this.historySheetRoot.destroy(true);
+      this.historySheetRoot = null;
+      return;
+    }
+    // Rebuild history into a temporary container
+    const root = this.add.container(0, 0).setDepth(180);
+    this.historySheetRoot = root;
+
+    const dim = this.add
+      .rectangle(W / 2, H / 2, W, H, Theme.void, 0.72)
+      .setInteractive();
+    dim.on("pointerdown", () => {
+      audio.play("click");
+      root.destroy(true);
+      this.historySheetRoot = null;
+    });
+
+    const panelW = W - 24;
+    const panelH = Math.min(H * 0.62, 480);
+    const panel = this.add.container(W / 2, H / 2);
+    const bg = this.add.graphics();
+    drawPanel(bg, -panelW / 2, -panelH / 2, panelW, panelH, {
+      fill: Theme.deep,
+      fillAlpha: 0.97,
+      stroke: Theme.border,
+      strokeAlpha: 0.5,
+      radius: 14,
+    });
+
+    const title = this.add
+      .text(0, -panelH / 2 + 18, "// OPS LOG", {
+        fontFamily: FONT_DISPLAY,
+        fontSize: "12px",
+        color: "#a8b0d0",
+        letterSpacing: 2,
+      })
+      .setOrigin(0.5, 0);
+
+    const list = this.add.container(-panelW / 2 + 14, -panelH / 2 + 48);
+    // Temporarily point historyContainer at list for syncHistory, then restore
+    const prev = this.historyContainer;
+    this.historyContainer = list;
+    this.historyContainer.setVisible(true);
+    this.syncHistory();
+    this.historyContainer = prev;
+
+    const close = makeButton(this, 0, panelH / 2 - 28, "CLOSE", {
+      width: 120,
+      height: 40,
+      fontSize: 12,
+      variant: "secondary",
+      onClick: () => {
+        audio.play("click");
+        root.destroy(true);
+        this.historySheetRoot = null;
+      },
+    });
+
+    // Block clicks on panel body
+    const block = this.add
+      .rectangle(0, 0, panelW, panelH - 60, 0x000000, 0.001)
+      .setInteractive();
+
+    panel.add([bg, block, title, list, close]);
+    root.add([dim, panel]);
   }
 
   // ─── State sync ────────────────────────────────────────────────
@@ -689,8 +1086,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncHistory() {
+    if (!this.historyContainer) return;
     this.historyContainer.removeAll(true);
-    const entries = GameState.history.slice(0, 12);
+    const entries = GameState.history.slice(0, IS_MOBILE ? 14 : 12);
+    const wrapW = IS_MOBILE ? W - 70 : 200;
     const colors: Record<string, string> = {
       match: "#2ee6a6",
       combo: "#ffc857",
@@ -705,7 +1104,7 @@ export class GameScene extends Phaser.Scene {
           fontFamily: FONT_BODY,
           fontSize: "13px",
           color: "#6b7394",
-          wordWrap: { width: 200 },
+          wordWrap: { width: wrapW },
         })
       );
       return;
@@ -722,7 +1121,7 @@ export class GameScene extends Phaser.Scene {
         fontFamily: FONT_BODY,
         fontSize: "13px",
         color: colors[e.kind] || "#a8b0d0",
-        wordWrap: { width: 200 },
+        wordWrap: { width: wrapW },
       });
 
       // tiny piece icons
@@ -1334,8 +1733,8 @@ export class GameScene extends Phaser.Scene {
       this.closeModal();
     });
 
-    const cardW = 360;
-    const cardH = 280;
+    const cardW = IS_MOBILE ? Math.min(W - 32, 340) : 360;
+    const cardH = IS_MOBILE ? 300 : 280;
     const card = this.add.container(W / 2, H / 2);
     const bg = this.add.graphics();
     drawPanel(bg, -cardW / 2, -cardH / 2, cardW, cardH, {
@@ -1345,19 +1744,18 @@ export class GameScene extends Phaser.Scene {
       strokeAlpha: 0.6,
       radius: 16,
     });
-    // top accent
     bg.lineStyle(2, Theme.purple, 0.8);
     bg.lineBetween(-cardW / 2 + 20, -cardH / 2, cardW / 2 - 20, -cardH / 2);
 
     const meta = mappings[item.id];
     const icon = this.add
       .image(0, -70, meta.key)
-      .setDisplaySize(72, 72);
+      .setDisplaySize(IS_MOBILE ? 64 : 72, IS_MOBILE ? 64 : 72);
 
     const title = this.add
       .text(0, -20, item.name.toUpperCase(), {
         fontFamily: FONT_DISPLAY,
-        fontSize: "16px",
+        fontSize: IS_MOBILE ? "14px" : "16px",
         color: "#eef2ff",
         fontStyle: "700",
       })
@@ -1370,19 +1768,21 @@ export class GameScene extends Phaser.Scene {
         `Spend ${formatPoints(item.price)} coins?\nThis replaces the piece you are holding.`,
         {
           fontFamily: FONT_BODY,
-          fontSize: "16px",
+          fontSize: IS_MOBILE ? "15px" : "16px",
           color: "#a8b0d0",
           align: "center",
           lineSpacing: 4,
+          wordWrap: { width: cardW - 40 },
         }
       )
       .setOrigin(0.5);
 
     card.add([bg, icon, title, body]);
 
-    const cancel = makeButton(this, -70, 90, "CANCEL", {
-      width: 110,
-      height: 38,
+    const btnY = cardH / 2 - 48;
+    const cancel = makeButton(this, -70, btnY, "CANCEL", {
+      width: IS_MOBILE ? 120 : 110,
+      height: IS_MOBILE ? 44 : 38,
       fontSize: 11,
       variant: "secondary",
       onClick: () => {
@@ -1390,9 +1790,9 @@ export class GameScene extends Phaser.Scene {
         this.closeModal();
       },
     });
-    const confirm = makeButton(this, 70, 90, "DEPLOY", {
-      width: 110,
-      height: 38,
+    const confirm = makeButton(this, 70, btnY, "DEPLOY", {
+      width: IS_MOBILE ? 120 : 110,
+      height: IS_MOBILE ? 44 : 38,
       fontSize: 11,
       variant: "success",
       onClick: () => {
@@ -1435,8 +1835,8 @@ export class GameScene extends Phaser.Scene {
     this.modalRoot = root;
 
     const dim = this.add.rectangle(W / 2, H / 2, W, H, Theme.void, 0.75);
-    const cardW = 400;
-    const cardH = 320;
+    const cardW = IS_MOBILE ? Math.min(W - 28, 360) : 400;
+    const cardH = IS_MOBILE ? 340 : 320;
     const card = this.add.container(W / 2, H / 2);
     const bg = this.add.graphics();
     drawPanel(bg, -cardW / 2, -cardH / 2, cardW, cardH, {
@@ -1448,16 +1848,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     const title = this.add
-      .text(0, -100, "MISSION OVER", {
+      .text(0, -cardH / 2 + 36, "MISSION OVER", {
         fontFamily: FONT_DISPLAY,
-        fontSize: "22px",
+        fontSize: IS_MOBILE ? "18px" : "22px",
         color: "#eef2ff",
         fontStyle: "800",
       })
       .setOrigin(0.5);
 
     const label = this.add
-      .text(0, -55, "FINAL SCORE", {
+      .text(0, -cardH / 2 + 78, "FINAL SCORE", {
         fontFamily: FONT_DISPLAY,
         fontSize: "11px",
         color: "#6b7394",
@@ -1468,7 +1868,7 @@ export class GameScene extends Phaser.Scene {
     const score = this.add
       .text(0, -10, formatPoints(g.state.points), {
         fontFamily: FONT_DISPLAY,
-        fontSize: "42px",
+        fontSize: IS_MOBILE ? "36px" : "42px",
         color: "#ffc857",
         fontStyle: "800",
       })
@@ -1477,21 +1877,22 @@ export class GameScene extends Phaser.Scene {
     const blurb = this.add
       .text(
         0,
-        50,
+        55,
         "The board is sealed. Droids hold the last free tiles.\nRally your credits and try again, commander.",
         {
           fontFamily: FONT_BODY,
-          fontSize: "15px",
+          fontSize: IS_MOBILE ? "14px" : "15px",
           color: "#a8b0d0",
           align: "center",
           lineSpacing: 4,
+          wordWrap: { width: cardW - 36 },
         }
       )
       .setOrigin(0.5);
 
-    const again = makeButton(this, 0, 115, "RELAUNCH", {
-      width: 180,
-      height: 46,
+    const again = makeButton(this, 0, cardH / 2 - 42, "RELAUNCH", {
+      width: IS_MOBILE ? 200 : 180,
+      height: IS_MOBILE ? 50 : 46,
       fontSize: 14,
       variant: "primary",
       onClick: () => {
@@ -1530,6 +1931,82 @@ export class GameScene extends Phaser.Scene {
       this.closeModal();
     });
 
+    const howTo = [
+      "Tripod is a match-3 city builder. Place the piece you hold onto an empty tile.",
+      "Match 3 of a kind (orthogonally) to merge into the next tier. Match 4+ for a super-tier piece.",
+      "",
+      "CORE LOOP",
+      "• Plants → buildings → Galaxy Fortress",
+      "• Corner disk = storage / swap",
+      "• Droids roam each turn — trap them for shards",
+      "• Spend credits in the Arsenal",
+      "• Game ends when the board is full",
+      "",
+      "POWER-UPS",
+      "• Airdropper — clone a piece",
+      "• Reroll Box — new random piece",
+      "• Teleport Portal — swap two tiles",
+      "• Terraformer — clear all marbles",
+      "• Mega / Mini Bomb — blast zones",
+      "",
+      "TIPS",
+      "• Mimic Slime copies neighbors to force merges",
+      "• Unstable Bomb has 50% miss chance",
+      "• Combos multiply your score — chain merges",
+    ];
+
+    const objects = [
+      "PLANTS",
+      "Glitteroot Bud → Shrub → Glitteroot",
+      "",
+      "BUILDINGS",
+      "Pod → Shelter → Condo",
+      "Apartment → Soaring Tower → Galaxy Fortress",
+      "",
+      "ENEMIES",
+      "Droid — steps to adjacent empty tile",
+      "Rocket Droid — warps to any empty tile",
+      "",
+      "TREASURES",
+      "Scarlet Shard → Energy Stone → Reactor",
+      "Marble → Chunk → Loot Chest → Cybercore",
+      "",
+      "Tap outside or Close to return.",
+    ];
+
+    if (IS_MOBILE) {
+      // Single tall panel — combined manual
+      const panelW = W - 24;
+      const panelH = H - 80;
+      const panel = this.makeGuidePanel(
+        W / 2,
+        H / 2 - 10,
+        panelW,
+        panelH,
+        "FIELD MANUAL",
+        [...howTo, "", "— OBJECTS —", "", ...objects],
+        IS_MOBILE ? 12 : 14
+      );
+      const close = makeButton(
+        this,
+        W / 2,
+        H - 28,
+        "CLOSE",
+        {
+          width: 160,
+          height: 44,
+          fontSize: 12,
+          variant: "secondary",
+          onClick: () => {
+            audio.play("click");
+            this.closeModal();
+          },
+        }
+      );
+      root.add([dim, panel, close]);
+      return;
+    }
+
     const panelW = 520;
     const panelH = 560;
     const left = this.makeGuidePanel(
@@ -1538,29 +2015,7 @@ export class GameScene extends Phaser.Scene {
       panelW,
       panelH,
       "HOW TO PLAY",
-      [
-        "Tripod is a match-3 city builder. Place the piece you hold onto an empty tile.",
-        "Match 3 of a kind (orthogonally) to merge into the next tier. Match 4+ for a super-tier piece.",
-        "",
-        "CORE LOOP",
-        "• Plants → buildings → Galaxy Fortress",
-        "• Corner disk = storage / swap",
-        "• Droids roam each turn — trap them for shards",
-        "• Spend credits in the Arsenal",
-        "• Game ends when the board is full",
-        "",
-        "POWER-UPS",
-        "• Airdropper — clone a piece",
-        "• Reroll Box — new random piece",
-        "• Teleport Portal — swap two tiles",
-        "• Terraformer — clear all marbles",
-        "• Mega / Mini Bomb — blast zones",
-        "",
-        "TIPS",
-        "• Mimic Slime copies neighbors to force merges",
-        "• Unstable Bomb has 50% miss chance",
-        "• Combos multiply your score — chain merges",
-      ]
+      howTo
     );
 
     const right = this.makeGuidePanel(
@@ -1569,24 +2024,7 @@ export class GameScene extends Phaser.Scene {
       panelW,
       panelH,
       "THE OBJECTS",
-      [
-        "PLANTS",
-        "Glitteroot Bud → Shrub → Glitteroot",
-        "",
-        "BUILDINGS",
-        "Pod → Shelter → Condo",
-        "Apartment → Soaring Tower → Galaxy Fortress",
-        "",
-        "ENEMIES",
-        "Droid — steps to adjacent empty tile",
-        "Rocket Droid — warps to any empty tile",
-        "",
-        "TREASURES",
-        "Scarlet Shard → Energy Stone → Reactor",
-        "Marble → Chunk → Loot Chest → Cybercore",
-        "",
-        "Click outside or Close to return.",
-      ]
+      objects
     );
 
     const close = makeButton(this, W / 2, H / 2 + panelH / 2 + 28, "CLOSE MANUAL", {
@@ -1609,7 +2047,8 @@ export class GameScene extends Phaser.Scene {
     w: number,
     h: number,
     title: string,
-    lines: string[]
+    lines: string[],
+    bodySize = 14
   ) {
     const c = this.add.container(x, y);
     const bg = this.add.graphics();
@@ -1622,9 +2061,9 @@ export class GameScene extends Phaser.Scene {
     });
 
     const t = this.add
-      .text(0, -h / 2 + 22, title, {
+      .text(0, -h / 2 + 18, title, {
         fontFamily: FONT_DISPLAY,
-        fontSize: "14px",
+        fontSize: IS_MOBILE ? "12px" : "14px",
         color: "#2ee6a6",
         fontStyle: "700",
         letterSpacing: 2,
@@ -1632,17 +2071,24 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
 
     const body = this.add
-      .text(-w / 2 + 20, -h / 2 + 52, lines.join("\n"), {
+      .text(-w / 2 + 16, -h / 2 + 44, lines.join("\n"), {
         fontFamily: FONT_BODY,
-        fontSize: "14px",
+        fontSize: `${bodySize}px`,
         color: "#a8b0d0",
-        lineSpacing: 5,
-        wordWrap: { width: w - 40 },
+        lineSpacing: IS_MOBILE ? 3 : 5,
+        wordWrap: { width: w - 32 },
       })
       .setOrigin(0, 0);
 
+    // Clip overflowing body on small screens
+    if (body.height > h - 56) {
+      const maskG = this.make.graphics({ x: 0, y: 0 });
+      maskG.fillStyle(0xffffff);
+      maskG.fillRect(x - w / 2 + 12, y - h / 2 + 40, w - 24, h - 52);
+      body.setMask(maskG.createGeometryMask());
+    }
+
     c.add([bg, t, body]);
-    // block clicks through
     const block = this.add
       .rectangle(0, 0, w, h, 0x000000, 0.001)
       .setInteractive();
